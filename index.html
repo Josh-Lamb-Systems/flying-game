@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#9bcadd" />
+    <title>Aero / Lite — Pattern Trainer</title>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="world"></canvas>
+
+      <section id="briefing" class="panel visible" aria-label="Lesson briefing">
+        <div class="eyebrow"><span></span> LESSON 01 · FIRST CIRCUIT</div>
+        <h1>AERO<span>/</span>LITE</h1>
+        <p class="lede">Learn the pattern. Find the centerline. Bring it home.</p>
+        <div class="briefing-grid">
+          <div><small>AIRCRAFT</small><strong>Skyhawk-style 172</strong></div>
+          <div><small>AIRPORT</small><strong>Northwind Field</strong></div>
+          <div><small>CONDITIONS</small><strong>Runway 36 · Calm</strong></div>
+          <div><small>LESSON</small><strong>Normal takeoff & landing</strong></div>
+        </div>
+        <div class="lesson-note"><i>01</i><p><strong>Your instructor is on board.</strong><br/>Follow the amber flight-path gates. Prompts will change as you progress.</p></div>
+        <button id="start-button"><span>START ON RUNWAY</span><kbd>ENTER</kbd></button>
+        <div class="controls-preview">
+          <div><span class="keys"><kbd>W</kbd><kbd>S</kbd></span><small>PITCH</small></div>
+          <div><span class="keys"><kbd>A</kbd><kbd>D</kbd></span><small>ROLL</small></div>
+          <div><span class="keys"><kbd>Q</kbd><kbd>E</kbd></span><small>RUDDER</small></div>
+          <div><span class="keys"><kbd>↑</kbd><kbd>↓</kbd></span><small>THROTTLE</small></div>
+        </div>
+      </section>
+
+      <header id="topbar" class="hud hidden">
+        <div class="brand">AERO<span>/</span>LITE <b>TRAINER</b></div>
+        <div class="phase-track"><small>LESSON PROGRESS</small><div id="phase-dots"></div></div>
+        <div class="top-actions"><button id="controls-button">CONTROLS <kbd>TAB</kbd></button><button id="camera-button">PILOT VIEW <kbd>C</kbd></button><button id="pause-button">PAUSE <kbd>P</kbd></button></div>
+      </header>
+
+      <aside id="instructor" class="hud hidden">
+        <div class="instructor-head"><span class="avatar">CFI</span><div><small>INSTRUCTOR</small><strong id="phase-name">BEFORE TAKEOFF</strong></div></div>
+        <p id="instruction">Hold the centerline and smoothly advance to full throttle.</p>
+        <div class="targets">
+          <div><small>TARGET</small><strong id="target-speed">FULL POWER</strong></div>
+          <div><small>ALTITUDE</small><strong id="target-altitude">RUNWAY</strong></div>
+        </div>
+        <div id="quality"><span></span><em>READY</em></div>
+      </aside>
+
+      <main id="flight-hud" class="hud hidden" aria-label="Flight instruments">
+        <div id="reticle"><i></i><span></span><i></i></div>
+        <div id="attitude"><span class="horizon"></span><i class="pitch p1">10</i><i class="pitch p2">5</i><i class="pitch p3">5</i><i class="pitch p4">10</i></div>
+        <div id="direction-cue"><span>◆</span><small id="cue-distance">0.8 NM</small></div>
+        <div class="instrument speed"><small>AIRSPEED</small><strong id="speed">000</strong><span>KT</span><em id="speed-trend">▲</em></div>
+        <div class="instrument altitude"><small>ALTITUDE AGL</small><strong id="altitude">0000</strong><span>FT</span><em id="vertical-speed">+000</em></div>
+        <div class="throttle-wrap"><small>THR</small><div class="throttle"><i id="throttle-fill"></i></div><strong id="throttle-value">06</strong></div>
+        <div class="flaps"><small>FLAPS</small><strong id="flaps-value">UP</strong><span><kbd>F</kbd></span></div>
+        <div class="compass"><div class="ticks"></div><strong id="heading">N 000°</strong></div>
+        <div id="warning"></div>
+        <div class="assist"><i></i> FLIGHT ASSIST <strong>ON</strong></div>
+        <button id="go-around">GO AROUND <kbd>G</kbd></button>
+      </main>
+
+      <div id="cockpit" class="hidden">
+        <span class="pillar left"></span><span class="pillar right"></span>
+        <div class="glare-shield"></div><div class="panel-label">N172AL</div><div class="yoke"><i></i></div>
+      </div>
+
+      <section id="pause-menu" class="panel modal-panel">
+        <div class="eyebrow"><span></span> LESSON PAUSED</div><h2>Take a breath.</h2>
+        <button id="resume-button"><span>RESUME LESSON</span><kbd>P</kbd></button>
+        <button id="restart-button" class="secondary">RESTART FROM RUNWAY</button>
+      </section>
+
+      <section id="results" class="panel modal-panel results-panel">
+        <div class="eyebrow"><span></span> LESSON COMPLETE</div><h2 id="result-title">Nice landing.</h2>
+        <div class="score-ring"><strong id="total-score">84</strong><small>/ 100</small></div>
+        <div class="score-grid">
+          <div><small>CENTERLINE</small><strong id="score-centerline">90</strong></div>
+          <div><small>TOUCHDOWN ZONE</small><strong id="score-zone">82</strong></div>
+          <div><small>DESCENT RATE</small><strong id="score-descent">76</strong></div>
+          <div><small>ALIGNMENT</small><strong id="score-alignment">88</strong></div>
+        </div>
+        <p id="result-note">Good directional control. Next time, hold the flare a touch longer.</p>
+        <button id="retry-button"><span>FLY ANOTHER CIRCUIT</span><kbd>ENTER</kbd></button>
+      </section>
+
+      <section id="keymap" class="keymap" aria-label="Flight controls">
+        <div class="keymap-head"><div><small>QUICK REFERENCE</small><h2>Flight controls</h2></div><button id="close-controls">CLOSE <kbd>TAB</kbd></button></div>
+        <div class="keymap-grid">
+          <div class="key-group"><small>FLIGHT CONTROLS</small><p><span><kbd>W</kbd><kbd>S</kbd></span><strong>Pitch up / down</strong></p><p><span><kbd>A</kbd><kbd>D</kbd></span><strong>Bank left / right</strong></p><p><span><kbd>Q</kbd><kbd>E</kbd></span><strong>Rudder / steering</strong></p></div>
+          <div class="key-group"><small>POWER & CONFIGURATION</small><p><span><kbd>↑</kbd><kbd>↓</kbd></span><strong>Increase / decrease throttle</strong></p><p><span><kbd>F</kbd></span><strong>Cycle flaps</strong></p><p><span><kbd>SPACE</kbd></span><strong>Wheel brakes</strong></p></div>
+          <div class="key-group"><small>LESSON & VIEW</small><p><span><kbd>G</kbd></span><strong>Go around</strong></p><p><span><kbd>C</kbd></span><strong>Toggle pilot / outside view</strong></p><p><span><kbd>P</kbd></span><strong>Pause lesson</strong></p></div>
+        </div>
+        <div class="aircraft-envelope"><span>SKYHAWK TRAINER MODEL</span><b>180 HP</b><i></i><b>48 KCAS STALL</b><i></i><b>124 KTAS MAX CRUISE</b></div>
+        <p class="keymap-note">This lightweight model teaches control relationships and pattern habits—it is not a substitute for a POH or flight instruction.</p>
+      </section>
+
+      <div id="toast"><small>PHASE COMPLETE</small><strong>CROSSWIND</strong></div>
+      <div id="tip">Press <kbd>C</kbd> to enter the cockpit</div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
