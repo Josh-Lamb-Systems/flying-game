@@ -29,6 +29,8 @@ npm run dev
 - `Space` — brake during rollout
 - `G` — go around during approach
 - `C` — toggle external and internal pilot views
+- Click and drag — look around in either view; release to hold the view angle
+- `Volume Up` / `Volume Down` (or `+` / `-`) — adjust game audio
 - `Tab` — toggle the in-flight controls reference
 - `P` or `Escape` — pause
 

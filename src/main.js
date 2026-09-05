@@ -143,18 +143,22 @@ const phases=[
 ];
 
 const $=s=>document.querySelector(s);
-const ui={briefing:$('#briefing'),topbar:$('#topbar'),hud:$('#flight-hud'),instructor:$('#instructor'),pause:$('#pause-menu'),results:$('#results'),keymap:$('#keymap'),cockpit:$('#cockpit'),speed:$('#speed'),alt:$('#altitude'),vs:$('#vertical-speed'),throttle:$('#throttle-value'),fill:$('#throttle-fill'),flaps:$('#flaps-value'),heading:$('#heading'),cue:$('#direction-cue'),cueDist:$('#cue-distance'),warning:$('#warning'),phase:$('#phase-name'),instruction:$('#instruction'),targetSpeed:$('#target-speed'),targetAlt:$('#target-altitude'),quality:$('#quality'),toast:$('#toast'),tip:$('#tip'),goAround:$('#go-around'),cameraButton:$('#camera-button'),attitude:$('#attitude')};
+const ui={briefing:$('#briefing'),topbar:$('#topbar'),hud:$('#flight-hud'),instructor:$('#instructor'),pause:$('#pause-menu'),results:$('#results'),keymap:$('#keymap'),cockpit:$('#cockpit'),speed:$('#speed'),alt:$('#altitude'),vs:$('#vertical-speed'),throttle:$('#throttle-value'),fill:$('#throttle-fill'),flaps:$('#flaps-value'),heading:$('#heading'),cue:$('#direction-cue'),cueDist:$('#cue-distance'),warning:$('#warning'),phase:$('#phase-name'),instruction:$('#instruction'),targetSpeed:$('#target-speed'),targetAlt:$('#target-altitude'),quality:$('#quality'),toast:$('#toast'),tip:$('#tip'),goAround:$('#go-around'),cameraButton:$('#camera-button'),attitude:$('#attitude'),volume:$('#volume-value')};
 const dots=$('#phase-dots');phases.forEach(()=>dots.append(document.createElement('i')));
-const keys={};let state='briefing',controlsReturnState='flying',cameraMode=0,lessonStage=0,throttle=.06,flaps=0,airspeed=0,onGround=true,wasAirborne=false,touchdown=null,toastTimer=0,tipTimer=0,elapsed=0,rolloutTimer=0;
-const velocity=new THREE.Vector3(),forward=new THREE.Vector3(),camPos=new THREE.Vector3(),camTarget=new THREE.Vector3();
+const keys={};let state='briefing',controlsReturnState='flying',cameraMode=0,lessonStage=0,throttle=.06,flaps=0,airspeed=0,onGround=true,wasAirborne=false,touchdown=null,toastTimer=0,tipTimer=0,elapsed=0,rolloutTimer=0,masterVolume=.7;
+const velocity=new THREE.Vector3(),forward=new THREE.Vector3(),camPos=new THREE.Vector3(),camTarget=new THREE.Vector3(),camUp=new THREE.Vector3(),localCam=new THREE.Vector3();
+const lookEuler=new THREE.Euler(0,0,0,'YXZ'),lookQuaternion=new THREE.Quaternion();
+const mouseLook={dragging:false,pointerId:null,lastX:0,lastY:0,outside:{yaw:0,pitch:0},cockpit:{yaw:0,pitch:0}};
+const audio={context:null,master:null,engineGain:null,engineFilter:null,engineOscillators:[],tireGain:null,tireFilter:null};
 
 function groundAt(x,z){if(Math.abs(x-AIRPORT_X)<29&&Math.abs(z-AIRPORT_Z)<RUNWAY_HALF)return RUNWAY_Y+1.02;return terrainHeight(x,z)+1.02}
 function resetLesson(){
   state=state==='briefing'?'briefing':'flying';cameraMode=0;lessonStage=0;throttle=.06;flaps=0;airspeed=0;onGround=true;wasAirborne=false;touchdown=null;rolloutTimer=0;
+  mouseLook.dragging=false;mouseLook.outside.yaw=mouseLook.outside.pitch=mouseLook.cockpit.yaw=mouseLook.cockpit.pitch=0;document.body.classList.remove('mouse-looking');
   plane.position.set(AIRPORT_X,RUNWAY_Y+1.02,AIRPORT_Z+RUNWAY_HALF-55);plane.rotation.set(0,0,0);plane.visible=true;velocity.set(0,0,0);
   gates.forEach((g,i)=>{g.visible=true;g.material.opacity=i===0?.85:.18});document.body.classList.remove('pilot-view');ui.cockpit.classList.add('hidden');ui.results.classList.remove('visible');updatePhase();
 }
-function begin(){state='flying';ui.briefing.classList.remove('visible');ui.topbar.classList.remove('hidden');ui.hud.classList.remove('hidden');ui.instructor.classList.remove('hidden');showTip('Press <kbd>C</kbd> to enter the cockpit',4);clock.getDelta()}
+function begin(){initAudio();state='flying';ui.briefing.classList.remove('visible');ui.topbar.classList.remove('hidden');ui.hud.classList.remove('hidden');ui.instructor.classList.remove('hidden');showTip('Click and drag to look around · <kbd>C</kbd> changes view',5);clock.getDelta()}
 function togglePause(){if(state==='briefing'||state==='results')return;state=state==='paused'?'flying':'paused';ui.pause.classList.toggle('visible',state==='paused')}
 function toggleControls(){
   if(state==='briefing'||state==='results')return;
@@ -162,9 +166,29 @@ function toggleControls(){
   if(open){ui.keymap.classList.remove('visible');document.body.classList.remove('controls-open');state=controlsReturnState}
   else{controlsReturnState=state==='paused'?'paused':'flying';state='controls';Object.keys(keys).forEach(k=>keys[k]=false);ui.keymap.classList.add('visible');document.body.classList.add('controls-open')}
 }
-function toggleCamera(){cameraMode=1-cameraMode;document.body.classList.toggle('pilot-view',cameraMode===1);ui.cockpit.classList.toggle('hidden',cameraMode!==1);ui.cameraButton.firstChild.textContent=cameraMode===1?'OUTSIDE VIEW ':'PILOT VIEW '}
+function toggleCamera(){cameraMode=1-cameraMode;document.body.classList.toggle('pilot-view',cameraMode===1);ui.cockpit.classList.toggle('hidden',cameraMode!==1);ui.cameraButton.firstChild.textContent=cameraMode===1?'OUTSIDE VIEW ':'PILOT VIEW ';showTip('Click and drag to look around. Your view stays set when released.',3)}
 function showTip(html,time=2.5){ui.tip.innerHTML=html;ui.tip.classList.add('visible');tipTimer=time}
 function showToast(text,small='PHASE COMPLETE'){ui.toast.querySelector('small').textContent=small;ui.toast.querySelector('strong').textContent=text;ui.toast.classList.add('show');toastTimer=2.2}
+
+function initAudio(){
+  if(audio.context){if(audio.context.state==='suspended')audio.context.resume();return}
+  const AudioContext=window.AudioContext||window.webkitAudioContext;if(!AudioContext)return;
+  const context=new AudioContext(),master=context.createGain(),engineGain=context.createGain(),engineFilter=context.createBiquadFilter();
+  master.gain.value=masterVolume;engineGain.gain.value=0;engineFilter.type='lowpass';engineFilter.frequency.value=950;engineFilter.Q.value=.7;
+  engineFilter.connect(engineGain).connect(master).connect(context.destination);
+  [['sawtooth',1,.12],['triangle',2.01,.055]].forEach(([type,multiple,gainValue])=>{const oscillator=context.createOscillator(),gain=context.createGain();oscillator.type=type;oscillator.frequency.value=24*multiple;gain.gain.value=gainValue;oscillator.connect(gain).connect(engineFilter);oscillator.start();audio.engineOscillators.push({oscillator,multiple})});
+  const noiseBuffer=context.createBuffer(1,context.sampleRate*2,context.sampleRate),data=noiseBuffer.getChannelData(0);for(let i=0;i<data.length;i++)data[i]=Math.random()*2-1;
+  const tireSource=context.createBufferSource(),tireFilter=context.createBiquadFilter(),tireGain=context.createGain();tireSource.buffer=noiseBuffer;tireSource.loop=true;tireFilter.type='bandpass';tireFilter.frequency.value=1500;tireFilter.Q.value=7;tireGain.gain.value=0;tireSource.connect(tireFilter).connect(tireGain).connect(master);tireSource.start();
+  Object.assign(audio,{context,master,engineGain,engineFilter,tireGain,tireFilter});context.resume();
+}
+function updateAudio(){
+  if(!audio.context)return;const now=audio.context.currentTime,rpm=700+throttle*2000,firingFrequency=rpm/30,active=state==='flying',paused=state==='paused'||state==='controls';
+  audio.master.gain.setTargetAtTime(masterVolume,now,.035);audio.engineGain.gain.setTargetAtTime(active ? .6 : paused ? .2 : .35,now,.12);audio.engineFilter.frequency.setTargetAtTime(650+throttle*1050,now,.08);
+  audio.engineOscillators.forEach(({oscillator,multiple})=>oscillator.frequency.setTargetAtTime(firingFrequency*multiple,now,.055));
+  const braking=active&&onGround&&keys.Space&&airspeed>2,tireLevel=braking?THREE.MathUtils.clamp(airspeed/24,.12,1)*.22:0;
+  audio.tireGain.gain.setTargetAtTime(tireLevel,now,braking ? .025 : .08);audio.tireFilter.frequency.setTargetAtTime(1050+airspeed*38,now,.04);
+}
+function setVolume(value){masterVolume=THREE.MathUtils.clamp(Math.round(value*10)/10,0,1);ui.volume.textContent=`${Math.round(masterVolume*100)}%`;if(audio.context)audio.master.gain.setTargetAtTime(masterVolume,audio.context.currentTime,.025);showToast(masterVolume?`${Math.round(masterVolume*100)}%`:'MUTED','VOLUME')}
 function updatePhase(){
   const p=phases[Math.min(lessonStage,phases.length-1)];ui.phase.textContent=p.name;ui.instruction.textContent=p.text;ui.targetSpeed.textContent=p.speed;ui.targetAlt.textContent=p.alt;
   [...dots.children].forEach((d,i)=>{d.className=i<lessonStage?'done':i===lessonStage?'active':''});gates.forEach((g,i)=>{g.material.opacity=i===lessonStage-3?.88:.13});
@@ -225,8 +249,14 @@ function updateFlight(dt){
 
 function currentTarget(){if(lessonStage<=2)return new THREE.Vector3(AIRPORT_X,RUNWAY_Y+80,AIRPORT_Z-RUNWAY_HALF-250);if(lessonStage<=8)return gateData[lessonStage-3].p;return new THREE.Vector3(AIRPORT_X,RUNWAY_Y,AIRPORT_Z+150)}
 function updateCamera(dt){
-  if(cameraMode===0){camPos.set(13,7,20).applyQuaternion(plane.quaternion).add(plane.position);camTarget.set(0,.5,-18).applyQuaternion(plane.quaternion).add(plane.position)}else{camPos.set(0,.72,-1.52).applyQuaternion(plane.quaternion).add(plane.position);camTarget.set(0,.55,-70).applyQuaternion(plane.quaternion).add(plane.position)}
-  camera.position.lerp(camPos,1-Math.exp(-dt*(cameraMode?14:5)));camera.lookAt(camTarget);plane.visible=cameraMode===0;
+  const look=cameraMode===0?mouseLook.outside:mouseLook.cockpit;
+  if(cameraMode===0){
+    const radius=Math.hypot(13,7,20),azimuth=Math.atan2(13,20)+look.yaw,elevation=Math.atan2(7,Math.hypot(13,20))+look.pitch,cosElevation=Math.cos(elevation);
+    localCam.set(Math.sin(azimuth)*cosElevation*radius,Math.sin(elevation)*radius,Math.cos(azimuth)*cosElevation*radius);camPos.copy(localCam).applyQuaternion(plane.quaternion).add(plane.position);camTarget.set(0,.5,-2.5).applyQuaternion(plane.quaternion).add(plane.position);
+  }else{
+    camPos.set(0,.72,-1.52).applyQuaternion(plane.quaternion).add(plane.position);lookEuler.set(look.pitch,look.yaw,0);lookQuaternion.setFromEuler(lookEuler);forward.set(0,0,-1).applyQuaternion(lookQuaternion).applyQuaternion(plane.quaternion);camTarget.copy(camPos).addScaledVector(forward,70);
+  }
+  camera.position.lerp(camPos,1-Math.exp(-dt*(cameraMode?14:5)));camUp.set(0,1,0).applyQuaternion(plane.quaternion);camera.up.lerp(camUp,1-Math.exp(-dt*9)).normalize();camera.lookAt(camTarget);plane.visible=cameraMode===0;
   sun.position.set(plane.position.x-1800,plane.position.y+2600,plane.position.z-900);sun.target.position.copy(plane.position);
 }
 function updateUI(){
@@ -237,8 +267,12 @@ function updateUI(){
 }
 
 $('#start-button').addEventListener('click',begin);$('#pause-button').addEventListener('click',togglePause);$('#resume-button').addEventListener('click',togglePause);$('#controls-button').addEventListener('click',toggleControls);$('#close-controls').addEventListener('click',toggleControls);$('#camera-button').addEventListener('click',toggleCamera);$('#go-around').addEventListener('click',goAround);$('#restart-button').addEventListener('click',()=>{ui.pause.classList.remove('visible');state='flying';resetLesson()});$('#retry-button').addEventListener('click',()=>{state='flying';resetLesson()});
-addEventListener('keydown',e=>{if(e.code==='Tab'){if(!e.repeat)toggleControls();e.preventDefault();return}if(state==='controls'){e.preventDefault();return}keys[e.code]=true;if(e.code==='Enter'){if(state==='briefing')begin();else if(state==='results'){state='flying';resetLesson()}}if(e.code==='KeyP'||e.code==='Escape')togglePause();if(e.code==='KeyC')toggleCamera();if(e.code==='KeyG')goAround();if(e.code==='KeyF'&&state==='flying')flaps=flaps>=30?0:flaps+10;e.preventDefault()});addEventListener('keyup',e=>keys[e.code]=false);
+canvas.addEventListener('pointerdown',e=>{if(e.button!==0||state!=='flying')return;initAudio();mouseLook.dragging=true;mouseLook.pointerId=e.pointerId;mouseLook.lastX=e.clientX;mouseLook.lastY=e.clientY;canvas.setPointerCapture(e.pointerId);document.body.classList.add('mouse-looking');e.preventDefault()});
+canvas.addEventListener('pointermove',e=>{if(!mouseLook.dragging||e.pointerId!==mouseLook.pointerId)return;const dx=e.clientX-mouseLook.lastX,dy=e.clientY-mouseLook.lastY,look=cameraMode===0?mouseLook.outside:mouseLook.cockpit;mouseLook.lastX=e.clientX;mouseLook.lastY=e.clientY;look.yaw-=dx*.004;look.pitch-=dy*.004;if(cameraMode===0){look.yaw=Math.atan2(Math.sin(look.yaw),Math.cos(look.yaw));look.pitch=THREE.MathUtils.clamp(look.pitch,-.42,1.02)}else{look.yaw=THREE.MathUtils.clamp(look.yaw,-2.1,2.1);look.pitch=THREE.MathUtils.clamp(look.pitch,-1.0,.78)}e.preventDefault()});
+function endMouseLook(e){if(!mouseLook.dragging||e.pointerId!==mouseLook.pointerId)return;mouseLook.dragging=false;mouseLook.pointerId=null;document.body.classList.remove('mouse-looking')}
+canvas.addEventListener('pointerup',endMouseLook);canvas.addEventListener('pointercancel',endMouseLook);canvas.addEventListener('lostpointercapture',()=>{mouseLook.dragging=false;mouseLook.pointerId=null;document.body.classList.remove('mouse-looking')});
+addEventListener('keydown',e=>{const volumeStep=(e.code==='AudioVolumeUp'||e.code==='Equal'||e.code==='NumpadAdd')?.1:(e.code==='AudioVolumeDown'||e.code==='Minus'||e.code==='NumpadSubtract')?-.1:0;if(volumeStep){initAudio();setVolume(masterVolume+volumeStep);e.preventDefault();return}if(e.code==='Tab'){if(!e.repeat)toggleControls();e.preventDefault();return}if(state==='controls'){e.preventDefault();return}keys[e.code]=true;if(e.code==='Enter'){if(state==='briefing')begin();else if(state==='results'){state='flying';resetLesson()}}if(e.code==='KeyP'||e.code==='Escape')togglePause();if(e.code==='KeyC')toggleCamera();if(e.code==='KeyG')goAround();if(e.code==='KeyF'&&state==='flying')flaps=flaps>=30?0:flaps+10;e.preventDefault()});addEventListener('keyup',e=>keys[e.code]=false);
 
 resetLesson();
-function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04);elapsed+=dt;if(state==='flying'){updateFlight(dt);updateCamera(dt);updateUI()}else if(state==='briefing'){updateCamera(dt)}clouds.forEach(c=>{c.position.x+=c.userData.drift*dt;if(c.position.x>4500)c.position.x=-4500});gates.forEach((g,i)=>{g.rotation.z+=dt*.18;g.position.y=gateData[i].p.y+Math.sin(elapsed*1.2+i)*2});if(toastTimer>0&&(toastTimer-=dt)<=0)ui.toast.classList.remove('show');if(tipTimer>0&&(tipTimer-=dt)<=0)ui.tip.classList.remove('visible');renderer.render(scene,camera)}
+function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.04);elapsed+=dt;if(state==='flying'){updateFlight(dt);updateCamera(dt);updateUI()}else if(state==='briefing'){updateCamera(dt)}updateAudio();clouds.forEach(c=>{c.position.x+=c.userData.drift*dt;if(c.position.x>4500)c.position.x=-4500});gates.forEach((g,i)=>{g.rotation.z+=dt*.18;g.position.y=gateData[i].p.y+Math.sin(elapsed*1.2+i)*2});if(toastTimer>0&&(toastTimer-=dt)<=0)ui.toast.classList.remove('show');if(tipTimer>0&&(tipTimer-=dt)<=0)ui.tip.classList.remove('visible');renderer.render(scene,camera)}
 addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,1.8))});animate();
